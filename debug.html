@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <title>Loading..</title>
+        <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
+        <style>
+            html {
+                background-color: white;
+            }
+            body {
+                margin: 0;
+                padding: 0;
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                justify-content: center;
+                height: 100vh;
+                font-family: Arial, sans-serif;
+            }
+            .loader {
+                position: fixed;
+                left: 0px;
+                top: 0px;
+                width: 100%;
+                height: 100%;
+                z-index: 9998;
+                background: url('data:image/gif;base64,R0lGODlhMgAoAPUAADMzzDNmzGZmzGaZzJmZzJmZ/5nMzJnM/8zMzMzM/8z//////+jp9rS15tXW7oKF2MXI6qCi4fT0+97e85OU3XJ21aus4Ly+58/P6/r7/e/v+lVVzuLk9mdo05qd3dra8IuL2q+y4sHD6ERHzff3/dLS7nl+1aam4ezs+MjL7f39/1pe0W5u0uHi85GS2vLy+9bY8Le35qOm37O04+Tm9dTU78nK64aH1uvr98/R7WRq0Ts+zaus47Gy5PDw+tze8iH/C05FVFNDQVBFMi4wAwEAAAAh/g5HaWZCdWlsZGVyIDEuMQAh+QQEBAD/ACwAAAAAMgAoAAAG/8CFcEgsGo/IpHLJbDqf0Kh0Sq1ar9isdqmCuHg+qAMEgmUbgHSH5PykAbvJVbV6A3JOj102r79LThF2J1hoamxNLTtpIzRYXV9hTxwnFo5bmJmam5ydSl0mIB9XGTM6JqNQNm87l1QzbyMMUA92PVUqHXYiUC52MVYmdilQMIsAGxpWJccsElETJyEoWC0hF8+e2tvcmSgYHFEkDjAZWQ4jaTxPLyxpFdm4um+uSz12M1ck6W81ThR2PGCpxUgSkReIiIiwAwELDhM7VvgjQoLCjhE9VBDJcOKiBY2PXpgrYigNniIkEnYimMZCNyMydr0sgmLeDZUzF5CA8WNkzgafQIMuCAIAIfkEBAQA/wAsCwACABEACwAABjDAhXBIHL4kxaSQRAHsQiolMQSoAnLSockKsGSFMq7ou0B1qg8SeUFyfDLruHw+DwIAIfkEBAQA/wAsCAAHAAoAEAAABinAhXChgrh4vqGwAWh2SEPVqtnMRafUkpLphEaNSKV4TC6bz+i0ei0MAgAh+QQEBAD/ACwIABEACgAQAAAGK0AVxAT6LI5HG2C5oyEXj+Wy93RJAbEnbLfcaJ6LySmEApvP6LR6zW671UEAIfkEBAQA/wAsCwAaABEACwAABjDAxQKF4QiPSKRjBADwklBVp9mkQZEkJrV2RT6oI1/3iDPtVtzxUfXKqN/wuHyeDAIAIfkEBAQA/wAsFgAaABAACwAABizAhXBILBqPyKRy+SItFyTKbtRTKRuALCCnfGgBFqXsK1KiOtmbU0mC/TLLIAAh+QQEBAD/ACwgABEACgAQAAAGLcCFcEgsGo/IpHLJbJIcsEzxxQIAKhJiz2qdESlcgIcoCkOImdNuZFEZSSRjEAAh+QQEBAD/ACwgAAcACgAQAAAGK8CFcEgsGo/IpHLJbDYzM53pU5wBriPGUNW5XkVEkxeQIpZ2V5ak2Apd1kEAOw==') 50% 50% no-repeat;
+                text-align: center;
+            }
+            .turnstile-container {
+                position: relative;
+				z-index: 9999;
+				/* background: white; */
+				padding: 40px;
+				border-radius: 10px;
+				/* box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1); */
+				text-align: center;
+            }
+            .turnstile-container h2 {
+                margin: 0 0 20px 0;
+                color: #333;
+                font-size: 18px;
+            }
+            .cf-turnstile {
+                display: flex;
+                justify-content: center;
+            }
+            .loader.hidden {
+                display: none;
+            }
+            .site-container {
+                display: none;
+            }
+        </style>
+    </head>
+    <body>
+        <div class="site-container">
+            <div class="site-inner">
+                <main class="content">
+                    <div class="entry-content" itemprop="text" data-size="16"></div>
+                </main>
+            </div>
+        </div>
+        <div class="loader" id="loader"></div>
+        
+        <div class="turnstile-container" id="turnstile-container" style="display:none;">
+            <h2>Cek Keamanan...</h2>
+            <div class="cf-turnstile" data-sitekey="0x4AAAAAACNc_IrJs8GpsU_b" data-callback="onTurnstileSuccess" data-error-callback="onTurnstileError" data-theme="light"></div>
+        </div>
+
+        <noscript>
+            <center><b>Aktifkan JavaScript Anda Untuk Mengakses Halaman Ini</b></center>
+        </noscript>
+
+       <script type="text/javascript">function ipin_parseTrace(url, r) { fetch(url).then(function (resp) { return resp.text(); }).then(function (resp) { let trace = {}; let lines = resp.split(/\r?\n/); let keyValue; lines.forEach(function (line) { keyValue = line.split('='); trace[keyValue[0]] = decodeURIComponent(keyValue[1] || '').trim(); }); return r(trace); }).catch(function (e) { r(false); }); } function ipin_setCookie(cname, cvalue, exdays) { let d = new Date(); d.setTime(d.getTime() + (exdays * 24 * 60 * 60 * 1000)); let expires = "expires=" + d.toUTCString(); document.cookie = cname + "=" + cvalue + ";" + expires + ";path=/;SameSite=Strict"; } function ipin_err() { if (ipin_tz() === "Asia/Jakarta") return ipin_setCookie("_as_ipin_ct", "ID", 1); window.location.assign("/error.php"); } function ipin_tz() { if (typeof Intl !== 'object') return false; if (Intl === null) return false; if ("DateTimeFormat" in Intl === false) return false; if ("resolvedOptions" in Intl.DateTimeFormat() === false) return false; if ("timeZone" in Intl.DateTimeFormat().resolvedOptions() === false) return false; return Intl.DateTimeFormat().resolvedOptions().timeZone; } function ipin_locale() { if (typeof Intl !== 'object') return false; if (Intl === null) return false; if ("DateTimeFormat" in Intl === false) return false; if ("resolvedOptions" in Intl.DateTimeFormat() === false) return false; if ("timeZone" in Intl.DateTimeFormat().resolvedOptions() === false) return false; return Intl.DateTimeFormat().resolvedOptions().locale; } function ipin_CfT() { if (typeof Intl !== 'object') return false; if (Intl === null) return false; if ("DateTimeFormat" in Intl === false) return false; if ("resolvedOptions" in Intl.DateTimeFormat() === false) return false; if ("timeZone" in Intl.DateTimeFormat().resolvedOptions() === false) return false; ipin_setCookie('_as_ipin_tz', Intl.DateTimeFormat().resolvedOptions().timeZone, 1); if ("locale" in Intl.DateTimeFormat().resolvedOptions() === false) return false; ipin_setCookie('_as_ipin_lc', Intl.DateTimeFormat().resolvedOptions().locale, 1); } ipin_CfT();</script>
+       
+       <script>
+       function checkCookiesEnabled() {
+           if (!navigator.cookieEnabled) {
+               alert('Oops!, Silahkan aktifkan cookie atau gunakan browser lain');
+               return false;
+           }
+           return true;
+       }
+
+       function getCountryInfo(callback) {
+           ipin_parseTrace('https://aghanim.xyz/cdn-cgi/trace', function(r) {
+               if (r !== false) {
+                   if (!r) {
+                       window.location.assign("/error.php");
+                       return;
+                   }
+                   if (typeof(r) !== typeof({}) || r === null) {
+                       window.location.assign("/error.php");
+                       return;
+                   }
+                   if ("loc" in r == false) {
+                       window.location.assign("/error.php");
+                       return;
+                   }
+                   if (r["loc"].length > 2 || r["loc"].length < 1) {
+                       window.location.assign("/error.php");
+                       return;
+                   }
+                   ipin_setCookie("_as_ipin_ct", r["loc"], 1);
+                   callback(true);
+               } else {
+                   ipin_err();
+                   callback(false);
+               }
+           });
+       }
+
+       function showTurnstile() {
+           document.getElementById('loader').style.display = 'none';
+           document.getElementById('turnstile-container').style.display = 'block';
+       }
+
+       function onTurnstileSuccess(token) {
+           fetch(window.location.href, {
+               method: 'POST',
+               headers: {
+                   'Content-Type': 'application/x-www-form-urlencoded'
+               },
+               body: 'turnstile_token=' + encodeURIComponent(token)
+           })
+           .then(response => response.json())
+           .then(data => {
+               if (data.success) {
+                   setTimeout(function() {
+                       window.location.reload();
+                   }, 1000);
+               } else {
+                   console.error('Verification failed:', data.message);
+                   alert('Verification failed: ' + data.message);
+                   location.reload();
+               }
+           })
+           .catch(error => {
+               if (!error) return;
+               console.error('Error:', error);
+               console.warn('Verification error. Please try again.');
+               location.reload();
+           });
+       }
+
+       function onTurnstileError() {
+           console.warn('Turnstile verification failed. Please try again.');
+           setTimeout(function(){location.reload()}, 1000);
+       }
+
+       window.addEventListener('load', function() {
+           if (!checkCookiesEnabled()) return;
+           
+           getCountryInfo(function(success) {
+               if (success) {
+                   showTurnstile();
+               }
+           });
+       });
+       </script>
+    </body>
+</html>
