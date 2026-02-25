@@ -4710,6 +4710,251 @@ app.get('/api/donghua/genres/:genre/page/:page', async (req, res) => {
   }
 });
 
+
+
+
+
+// ============= ENDPOINT DONGHUA LIST DENGAN FILTER LENGKAP =============
+app.get('/api/donghua/list', async (req, res) => {
+    try {
+        // ========== AMBIL SEMUA PARAMETER FILTER ==========
+        const page = parseInt(req.query.page) || 1;
+        const limit = parseInt(req.query.limit) || 20;
+        
+        // Genre (bisa array)
+        const genreParams = req.query.genre ? 
+            (Array.isArray(req.query.genre) ? req.query.genre : [req.query.genre]) : [];
+        
+        // Season (bisa array)
+        const seasonParams = req.query.season ? 
+            (Array.isArray(req.query.season) ? req.query.season : [req.query.season]) : [];
+        
+        // Studio (bisa array)
+        const studioParams = req.query.studio ? 
+            (Array.isArray(req.query.studio) ? req.query.studio : [req.query.studio]) : [];
+        
+        // Status (single value)
+        const statusParam = req.query.status || '';
+        
+        // Type (single value)
+        const typeParam = req.query.type || '';
+        
+        // Sub (single value)
+        const subParam = req.query.sub || '';
+        
+        // Order (single value)
+        const orderParam = req.query.order || '';
+        
+        // ========== BANGUN URL DENGAN FILTER ==========
+        let url = `${ANICHIN_URL}/anime/`;
+        
+        // Kumpulkan semua parameter query
+        const queryParams = [];
+        
+        // Tambahkan genre (format: genre[]=action&genre[]=fantasy)
+        genreParams.forEach(genre => {
+            queryParams.push(`genre[]=${encodeURIComponent(genre)}`);
+        });
+        
+        // Tambahkan season (format: season[]=fall-2025)
+        seasonParams.forEach(season => {
+            queryParams.push(`season[]=${encodeURIComponent(season)}`);
+        });
+        
+        // Tambahkan studio (format: studio[]=betobe)
+        studioParams.forEach(studio => {
+            queryParams.push(`studio[]=${encodeURIComponent(studio)}`);
+        });
+        
+        // Tambahkan status
+        if (statusParam) {
+            queryParams.push(`status=${encodeURIComponent(statusParam)}`);
+        }
+        
+        // Tambahkan type
+        if (typeParam) {
+            queryParams.push(`type=${encodeURIComponent(typeParam)}`);
+        }
+        
+        // Tambahkan sub
+        if (subParam) {
+            queryParams.push(`sub=${encodeURIComponent(subParam)}`);
+        }
+        
+        // Tambahkan order
+        if (orderParam) {
+            queryParams.push(`order=${encodeURIComponent(orderParam)}`);
+        }
+        
+        // Gabungkan semua parameter ke URL
+        if (queryParams.length > 0) {
+            url += '?' + queryParams.join('&');
+        }
+        
+        // Tambahkan page jika > 1 (untuk halaman berikutnya)
+        if (page > 1) {
+            // Jika sudah ada query params, tambahkan &page=
+            if (queryParams.length > 0) {
+                url += `&page=${page}`;
+            } else {
+                url += `?page=${page}`;
+            }
+        }
+        
+        console.log(`Fetching donghua list with filters: ${url}`);
+        
+        // ========== FETCH DARI WEBSITE ==========
+        const { data } = await axios.get(url, {
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+                'Accept-Language': 'id-ID,id;q=0.9,en-US;q=0.8,en;q=0.7',
+                'Referer': 'https://www.google.com/'
+            }
+        });
+        
+        const $ = cheerio.load(data);
+        
+        // ========== PARSING HASIL ==========
+        const donghuaList = [];
+        
+        $('.listupd article.bs').each((index, element) => {
+            const $el = $(element);
+            const link = $el.find('a').first();
+            const href = link.attr('href') || '';
+            
+            // Skip if no href
+            if (!href) return;
+            
+            // Title
+            const title = $el.find('.tt').text().trim() || 
+                         link.attr('title') || 
+                         'Unknown Title';
+            
+            // Thumbnail
+            let thumbnail = $el.find('img').attr('src') || $el.find('img').attr('data-src');
+            if (thumbnail) {
+                if (thumbnail.includes('i0.wp.com') && !thumbnail.startsWith('http')) {
+                    thumbnail = 'https:' + thumbnail;
+                } else if (thumbnail.startsWith('//')) {
+                    thumbnail = 'https:' + thumbnail;
+                }
+            }
+            
+            // Status (dari badge status)
+            const statusElement = $el.find('.status').first();
+            let status = statusElement.text().trim();
+            
+            // Jika tidak ada status, cek dari class lain
+            if (!status) {
+                if ($el.find('.hotbadge').length > 0) status = 'Hot';
+                else if ($el.find('.typez').next('.sb').length > 0) status = 'Ongoing';
+            }
+            
+            // Type
+            const type = $el.find('.typez').text().trim() || 'Donghua';
+            
+            // Episode info
+            const episode = $el.find('.epx').text().trim() || '';
+            
+            // Hot badge
+            const isHot = $el.find('.hotbadge').length > 0;
+            
+            // Get slug from URL
+            let slug = href.replace(ANICHIN_URL, '').replace(/^\//, '').replace(/\/$/, '');
+            
+            donghuaList.push({
+                title: title,
+                slug: slug,
+                url: href,
+                thumbnail: thumbnail || null,
+                type: type,
+                status: status,
+                episode: episode,
+                is_hot: isHot,
+                source: 'Anichin'
+            });
+        });
+        
+        // ========== PAGINATION INFO ==========
+        const hasNextPage = $('.hpage a.r, .pagination .next, .page-numbers.next').length > 0;
+        
+        let lastPage = page;
+        $('.page-numbers:not(.next)').each((i, el) => {
+            const pageNum = parseInt($(el).text().trim());
+            if (!isNaN(pageNum) && pageNum > lastPage) {
+                lastPage = pageNum;
+            }
+        });
+        
+        // ========== INFO FILTER YANG SEDANG DITERAPKAN ==========
+        const appliedFilters = {
+            genres: genreParams,
+            seasons: seasonParams,
+            studios: studioParams,
+            status: statusParam,
+            type: typeParam,
+            sub: subParam,
+            order: orderParam
+        };
+        
+        // ========== RESPONSE ==========
+        res.json({
+            success: true,
+            data: {
+                donghua: donghuaList.slice(0, limit),
+                total_results: donghuaList.length,
+                total_in_page: donghuaList.length,
+                applied_filters: appliedFilters
+            },
+            pagination: {
+                current_page: page,
+                next_page: hasNextPage ? page + 1 : null,
+                has_next_page: hasNextPage,
+                last_page: lastPage > page ? lastPage : (hasNextPage ? null : page),
+                limit: limit,
+                total_results_estimate: donghuaList.length < limit && !hasNextPage ? donghuaList.length : 'many'
+            },
+            filter_url: {
+                current: url,
+                base: `${ANICHIN_URL}/anime/`
+            },
+            source: {
+                name: 'Anichin',
+                url: url,
+                scraped_at: new Date().toISOString()
+            }
+        });
+        
+    } catch (error) {
+        console.error('Error fetching donghua list:', error.message);
+        
+        if (error.response) {
+            if (error.response.status === 404) {
+                return res.status(404).json({
+                    success: false,
+                    message: 'Halaman tidak ditemukan',
+                    error: 'Not Found'
+                });
+            } else if (error.response.status === 403) {
+                return res.status(503).json({
+                    success: false,
+                    message: 'Website Anichin memblokir akses. Coba lagi nanti.',
+                    error: 'Access Forbidden (403)'
+                });
+            }
+        }
+        
+        res.status(500).json({
+            success: false,
+            message: 'Gagal mengambil daftar donghua',
+            error: error.message
+        });
+    }
+});
+
+
+
 const PORT = process.env.PORT || 3000;
 
 app.listen(PORT, () => {
