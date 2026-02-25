@@ -416,10 +416,20 @@ app.get('/api/donghua/search', async (req, res) => {
 // ================= ENDPOINT API SAMEHADAKU =================
 
 // GET /api/anime/latest atau /api/anime/latest?page=10 atau /api/anime/latest/10
+// GET /api/anime/latest atau /api/anime/latest?page=10 atau /api/anime/latest/10
 async function getSamehadakuLatest(page = 1) {
   try {
     const pageNum = parseInt(page) || 1;
-    const url = `${SAMEHADAKU_URL}/anime-terbaru/page/${pageNum}/`;
+    
+    // Bangun URL dengan benar
+    let url;
+    if (pageNum === 1) {
+      url = `${SAMEHADAKU_URL}/anime-terbaru/`;
+    } else {
+      url = `${SAMEHADAKU_URL}/anime-terbaru/page/${pageNum}/`;
+    }
+    
+    console.log('Fetching latest anime from:', url);
     
     const res = await axios.get(`${PROXY}${url}`, { 
       headers, 
@@ -429,79 +439,97 @@ async function getSamehadakuLatest(page = 1) {
     const $ = cheerio.load(res.data);
     const data = [];
 
-    // Looping setiap item anime di halaman latest
+    // SELECTOR YANG BENAR berdasarkan struktur HTML
+    // Di HTML menggunakan: .post-show ul li
     const items = $('.post-show ul li').toArray();
     
-    // Proses items secara concurrent (parallel) untuk kecepatan
-    await Promise.all(items.map(async (element) => {
+    console.log(`Found ${items.length} items on page ${pageNum}`);
+    
+    // Proses items satu per satu (tanpa concurrent request dulu untuk testing)
+    for (const element of items) {
       const $el = $(element);
       
-      const title = $el.find('.dtla h2 a').text().trim();
-      const animeUrl = $el.find('.dtla h2 a').attr('href');
+      // ========== AMBIL DATA DARI HTML ==========
       
-      if (!title || !animeUrl) return;
+      // Title - dari h2.entry-title a
+      const title = $el.find('.dtla h2.entry-title a').text().trim();
       
-      // Episode
+      // URL Anime
+      const animeUrl = $el.find('.dtla h2.entry-title a').attr('href');
+      
+      // Image - dari .thumb img
+      let image = $el.find('.thumb img').attr('src') || '';
+      
+      // Episode - dari span dengan icon play
       let episode = '';
-      const episodeSpan = $el.find('.dtla span:contains("Episode")');
+      const episodeSpan = $el.find('.dtla span:has(.dashicons-controls-play) author[itemprop="name"]');
       if (episodeSpan.length) {
-        episode = episodeSpan.text().replace('Episode', '').replace(':', '').trim();
+        episode = episodeSpan.text().trim();
       }
       
-      // Released on
-      let releasedOn = '';
-      const releasedSpan = $el.find('.dtla span:contains("Released on")');
-      if (releasedSpan.length) {
-        releasedOn = releasedSpan.text().replace('Released on', '').replace(':', '').trim();
-      }
-      
-      // Posted by
+      // Posted by - dari span dengan icon admin-users
       let postedBy = '';
-      const authorSpan = $el.find('.dtla span:has(.dashicons-admin-users)');
+      const authorSpan = $el.find('.dtla span:has(.dashicons-admin-users) author[itemprop="name"]');
       if (authorSpan.length) {
-        postedBy = authorSpan.find('author[itemprop="name"]').text().trim();
+        postedBy = authorSpan.text().trim();
       }
+      
+      // Released on - dari span dengan icon calendar
+      let releasedOn = '';
+      const releasedSpan = $el.find('.dtla span:has(.dashicons-calendar)');
+      if (releasedSpan.length) {
+        // Ambil text setelah "Released on:"
+        const fullText = releasedSpan.text().trim();
+        releasedOn = fullText.replace('Released on', '').replace(':', '').trim();
+      }
+      
+      // Skip jika tidak ada title
+      if (!title || !animeUrl) continue;
+      
+      console.log(`Processing: ${title}, URL: ${animeUrl}`);
       
       // ========== AMBIL GAMBAR DARI HALAMAN DETAIL ==========
-      let image = '';
+      let detailImage = '';
       try {
         // Request ke halaman detail anime
+        console.log(`Fetching detail for ${title}...`);
         const detailRes = await axios.get(`${PROXY}${animeUrl}`, { 
           headers, 
-          timeout: 8000 // Timeout lebih pendek karena banyak request
+          timeout: 8000
         });
         
         const $$ = cheerio.load(detailRes.data);
         
         // Ambil gambar dari meta og:image (sama seperti di endpoint detail)
-        image = $$('meta[property="og:image"]').attr('content') || 
-                $$('.thumb img').attr('src') || 
-                $$('meta[name="twitter:image"]').attr('content') ||
-                '';
+        detailImage = $$('meta[property="og:image"]').attr('content') || 
+                      $$('.thumb img').attr('src') || 
+                      $$('meta[name="twitter:image"]').attr('content') ||
+                      '';
         
-        // Bersihkan URL jika perlu
-        if (image) {
-          // Pastikan menggunakan HTTPS
-          if (image.startsWith('http:')) {
-            image = image.replace('http:', 'https:');
-          } else if (image.startsWith('//')) {
-            image = 'https:' + image;
+        // Bersihkan URL
+        if (detailImage) {
+          if (detailImage.startsWith('http:')) {
+            detailImage = detailImage.replace('http:', 'https:');
+          } else if (detailImage.startsWith('//')) {
+            detailImage = 'https:' + detailImage;
           }
         }
         
-        console.log(`✅ Gambar untuk ${title}: ${image}`);
+        console.log(`✅ Got detail image for ${title}: ${detailImage}`);
+        
+        // Delay kecil biar gak kena rate limit
+        await new Promise(resolve => setTimeout(resolve, 500));
         
       } catch (detailError) {
-        console.log(`❌ Gagal ambil gambar untuk ${title}:`, detailError.message);
-        // Fallback ke gambar thumbnail dari halaman latest
-        image = $el.find('.thumb img').attr('src') || '';
+        console.log(`❌ Failed to get detail image for ${title}:`, detailError.message);
+        // Fallback ke thumbnail
+        detailImage = image;
       }
-      // ========== END AMBIL GAMBAR ==========
       
       data.push({
         title: title,
         url: animeUrl,
-        image: image, // Sekarang gambarnya sama dengan endpoint detail
+        image: detailImage || image, // Prioritaskan gambar dari halaman detail
         episode: episode,
         released_on: releasedOn,
         posted_by: postedBy,
@@ -509,19 +537,34 @@ async function getSamehadakuLatest(page = 1) {
         type: 'Anime',
         page: pageNum
       });
-    }));
+    }
 
-    // Ambil informasi pagination
+    // ========== PAGINATION ==========
     const pagination = {};
     const paginationEl = $('.pagination');
     if (paginationEl.length) {
+      // Current page
       const currentPage = paginationEl.find('.page-numbers.current').text().trim();
-      const totalPages = paginationEl.find('a:not(.arrow_pag)').last().text().trim() || currentPage;
+      
+      // Total pages - cari link halaman terakhir
+      let totalPages = currentPage;
+      paginationEl.find('a:not(.arrow_pag)').each((_, el) => {
+        const pageNum = $(el).text().trim();
+        if (pageNum && !isNaN(pageNum) && parseInt(pageNum) > parseInt(totalPages)) {
+          totalPages = pageNum;
+        }
+      });
+      
+      // Next/Prev buttons
+      const nextLink = paginationEl.find('a.arrow_pag .fa-caret-right').closest('a');
+      const prevLink = paginationEl.find('a.arrow_pag .fa-caret-left').closest('a');
       
       pagination.current = parseInt(currentPage) || pageNum;
       pagination.total = parseInt(totalPages) || 0;
-      pagination.has_next = paginationEl.find('a.arrow_pag .fa-caret-right').length > 0;
-      pagination.has_prev = paginationEl.find('a.arrow_pag .fa-caret-left').length > 0;
+      pagination.has_next = nextLink.length > 0;
+      pagination.has_prev = prevLink.length > 0;
+      pagination.next_url = nextLink.attr('href') || null;
+      pagination.prev_url = prevLink.attr('href') || null;
     }
 
     return {
@@ -543,14 +586,14 @@ async function getSamehadakuLatest(page = 1) {
   }
 }
 
+// Endpoint untuk /api/anime/latest
 app.get('/api/anime/latest', async (req, res) => {
   try {
     const page = req.query.page || 1;
     const data = await getSamehadakuLatest(page);
     
-    // Set response headers
     res.setHeader('Content-Type', 'application/json');
-    res.setHeader('Cache-Control', 's-maxage=300, stale-while-revalidate'); // Cache 5 menit
+    res.setHeader('Cache-Control', 's-maxage=300, stale-while-revalidate');
     
     res.json(data);
   } catch (error) {
@@ -562,6 +605,7 @@ app.get('/api/anime/latest', async (req, res) => {
   }
 });
 
+// Endpoint untuk /api/anime/latest/:page
 app.get('/api/anime/latest/:page', async (req, res) => {
   try {
     const page = req.params.page || 1;
