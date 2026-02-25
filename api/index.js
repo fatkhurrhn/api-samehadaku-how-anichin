@@ -416,7 +416,6 @@ app.get('/api/donghua/search', async (req, res) => {
 // ================= ENDPOINT API SAMEHADAKU =================
 
 // GET /api/anime/latest atau /api/anime/latest?page=10 atau /api/anime/latest/10
-// GET /api/anime/latest atau /api/anime/latest?page=10 atau /api/anime/latest/10
 async function getSamehadakuLatest(page = 1) {
   try {
     const pageNum = parseInt(page) || 1;
@@ -480,7 +479,10 @@ async function getSamehadakuLatest(page = 1) {
       if (releasedSpan.length) {
         // Ambil text setelah "Released on:"
         const fullText = releasedSpan.text().trim();
-        releasedOn = fullText.replace('Released on', '').replace(':', '').trim();
+        const rawReleasedOn = fullText.replace('Released on', '').replace(':', '').trim();
+        
+        // Konversi ke format sederhana
+        releasedOn = convertToSimpleFormat(rawReleasedOn);
       }
       
       // Skip jika tidak ada title
@@ -531,7 +533,7 @@ async function getSamehadakuLatest(page = 1) {
         url: animeUrl,
         image: detailImage || image, // Prioritaskan gambar dari halaman detail
         episode: episode,
-        released_on: releasedOn,
+        released_on: releasedOn, // Sudah dalam format sederhana (1h, 1d, dll)
         posted_by: postedBy,
         source: 'samehadaku',
         type: 'Anime',
@@ -584,6 +586,73 @@ async function getSamehadakuLatest(page = 1) {
       timestamp: new Date().toISOString()
     };
   }
+}
+
+// Fungsi helper untuk mengkonversi format waktu ke format sederhana
+function convertToSimpleFormat(timeString) {
+  if (!timeString) return '';
+  
+  // Contoh input: "4 hours yang lalu", "1 day yang lalu", "2 days yang lalu", "30 minutes yang lalu"
+  const lowerTime = timeString.toLowerCase();
+  
+  // Deteksi jam
+  if (lowerTime.includes('hour') || lowerTime.includes('hours') || lowerTime.includes('jam')) {
+    const match = lowerTime.match(/(\d+)\s*(?:hour|hours|jam)/);
+    if (match) {
+      return `${match[1]}h`;
+    }
+  }
+  
+  // Deteksi hari
+  if (lowerTime.includes('day') || lowerTime.includes('days') || lowerTime.includes('hari')) {
+    const match = lowerTime.match(/(\d+)\s*(?:day|days|hari)/);
+    if (match) {
+      return `${match[1]}d`;
+    }
+  }
+  
+  // Deteksi menit
+  if (lowerTime.includes('minute') || lowerTime.includes('minutes') || lowerTime.includes('menit')) {
+    const match = lowerTime.match(/(\d+)\s*(?:minute|minutes|menit)/);
+    if (match) {
+      return `${match[1]}m`;
+    }
+  }
+  
+  // Deteksi detik
+  if (lowerTime.includes('second') || lowerTime.includes('seconds') || lowerTime.includes('detik')) {
+    const match = lowerTime.match(/(\d+)\s*(?:second|seconds|detik)/);
+    if (match) {
+      return `${match[1]}s`;
+    }
+  }
+  
+  // Deteksi minggu
+  if (lowerTime.includes('week') || lowerTime.includes('weeks') || lowerTime.includes('minggu')) {
+    const match = lowerTime.match(/(\d+)\s*(?:week|weeks|minggu)/);
+    if (match) {
+      return `${match[1]}w`;
+    }
+  }
+  
+  // Deteksi bulan
+  if (lowerTime.includes('month') || lowerTime.includes('months') || lowerTime.includes('bulan')) {
+    const match = lowerTime.match(/(\d+)\s*(?:month|months|bulan)/);
+    if (match) {
+      return `${match[1]}mo`;
+    }
+  }
+  
+  // Deteksi tahun
+  if (lowerTime.includes('year') || lowerTime.includes('years') || lowerTime.includes('tahun')) {
+    const match = lowerTime.match(/(\d+)\s*(?:year|years|tahun)/);
+    if (match) {
+      return `${match[1]}y`;
+    }
+  }
+  
+  // Jika tidak cocok dengan pola di atas, kembalikan string asli
+  return timeString;
 }
 
 // Endpoint untuk /api/anime/latest
