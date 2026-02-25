@@ -418,75 +418,100 @@ app.get('/api/donghua/search', async (req, res) => {
 // GET /api/anime/latest atau /api/anime/latest?page=10 atau /api/anime/latest/10
 async function getSamehadakuLatest(page = 1) {
   try {
-    // Validasi page
     const pageNum = parseInt(page) || 1;
     const url = `${SAMEHADAKU_URL}/anime-terbaru/page/${pageNum}/`;
     
-    // Request dengan timeout dan headers
     const res = await axios.get(`${PROXY}${url}`, { 
       headers, 
-      timeout: 15000 // Timeout lebih lama
+      timeout: 15000 
     });
     
     const $ = cheerio.load(res.data);
     const data = [];
 
-    // Looping setiap item anime
-    $('.post-show ul li').each((_, element) => {
+    // Looping setiap item anime di halaman latest
+    const items = $('.post-show ul li').toArray();
+    
+    // Proses items secara concurrent (parallel) untuk kecepatan
+    await Promise.all(items.map(async (element) => {
       const $el = $(element);
       
-      // Selector untuk elemen-elemen yang diperlukan
       const title = $el.find('.dtla h2 a').text().trim();
-      const url = $el.find('.dtla h2 a').attr('href');
-      const image = $el.find('.thumb img').attr('src');
+      const animeUrl = $el.find('.dtla h2 a').attr('href');
       
-      // Episode - cari span yang mengandung kata "Episode"
+      if (!title || !animeUrl) return;
+      
+      // Episode
       let episode = '';
       const episodeSpan = $el.find('.dtla span:contains("Episode")');
       if (episodeSpan.length) {
         episode = episodeSpan.text().replace('Episode', '').replace(':', '').trim();
-      } else {
-        // Fallback: cari author yang mungkin berisi episode
-        episode = $el.find('.dtla author[itemprop="name"]').first().text().trim();
       }
       
-      // Released on - selector baru berdasarkan struktur HTML
+      // Released on
       let releasedOn = '';
       const releasedSpan = $el.find('.dtla span:contains("Released on")');
       if (releasedSpan.length) {
         releasedOn = releasedSpan.text().replace('Released on', '').replace(':', '').trim();
-      } else {
-        // Fallback: cari span dengan icon calendar
-        const calendarSpan = $el.find('.dtla span:has(.dashicons-calendar)');
-        if (calendarSpan.length) {
-          releasedOn = calendarSpan.text().replace('Released on', '').replace(':', '').trim();
-        }
       }
       
-      // Posted by (author)
+      // Posted by
       let postedBy = '';
       const authorSpan = $el.find('.dtla span:has(.dashicons-admin-users)');
       if (authorSpan.length) {
         postedBy = authorSpan.find('author[itemprop="name"]').text().trim();
       }
       
-      // Hanya push jika title ada
-      if (title) {
-        data.push({
-          title: title,
-          url: url,
-          image: image,
-          episode: episode,
-          released_on: releasedOn, // Field baru
-          posted_by: postedBy,
-          source: 'samehadaku',
-          type: 'Anime',
-          page: pageNum
+      // ========== AMBIL GAMBAR DARI HALAMAN DETAIL ==========
+      let image = '';
+      try {
+        // Request ke halaman detail anime
+        const detailRes = await axios.get(`${PROXY}${animeUrl}`, { 
+          headers, 
+          timeout: 8000 // Timeout lebih pendek karena banyak request
         });
+        
+        const $$ = cheerio.load(detailRes.data);
+        
+        // Ambil gambar dari meta og:image (sama seperti di endpoint detail)
+        image = $$('meta[property="og:image"]').attr('content') || 
+                $$('.thumb img').attr('src') || 
+                $$('meta[name="twitter:image"]').attr('content') ||
+                '';
+        
+        // Bersihkan URL jika perlu
+        if (image) {
+          // Pastikan menggunakan HTTPS
+          if (image.startsWith('http:')) {
+            image = image.replace('http:', 'https:');
+          } else if (image.startsWith('//')) {
+            image = 'https:' + image;
+          }
+        }
+        
+        console.log(`✅ Gambar untuk ${title}: ${image}`);
+        
+      } catch (detailError) {
+        console.log(`❌ Gagal ambil gambar untuk ${title}:`, detailError.message);
+        // Fallback ke gambar thumbnail dari halaman latest
+        image = $el.find('.thumb img').attr('src') || '';
       }
-    });
+      // ========== END AMBIL GAMBAR ==========
+      
+      data.push({
+        title: title,
+        url: animeUrl,
+        image: image, // Sekarang gambarnya sama dengan endpoint detail
+        episode: episode,
+        released_on: releasedOn,
+        posted_by: postedBy,
+        source: 'samehadaku',
+        type: 'Anime',
+        page: pageNum
+      });
+    }));
 
-    // Ambil informasi pagination jika ada
+    // Ambil informasi pagination
     const pagination = {};
     const paginationEl = $('.pagination');
     if (paginationEl.length) {
@@ -499,12 +524,22 @@ async function getSamehadakuLatest(page = 1) {
       pagination.has_prev = paginationEl.find('a.arrow_pag .fa-caret-left').length > 0;
     }
 
-    const response = handleResponse(data);
-    response.pagination = pagination;
-    return response;
+    return {
+      success: true,
+      data: data,
+      pagination: pagination,
+      total: data.length,
+      source: 'samehadaku',
+      scraped_at: new Date().toISOString()
+    };
     
   } catch (error) {
-    return handleError(error);
+    console.error('Latest Samehadaku error:', error.message);
+    return {
+      success: false,
+      error: error.message,
+      timestamp: new Date().toISOString()
+    };
   }
 }
 
@@ -544,7 +579,6 @@ app.get('/api/anime/latest/:page', async (req, res) => {
     });
   }
 });
-
 
 // ==================== SAMEHADAKU TOP 10 WEEKLY ====================
 async function getSamehadakuTop10() {
@@ -662,8 +696,7 @@ app.get('/api/anime/top-10', async (req, res) => {
   }
 });
 
-
-// GET /api/anime/detail atau /api/anime/detail/megami-ryou-no-ryoubo-kun atau /api/anime/detail?url=https://v1.samehadaku.how/anime/megami-ryou-no-ryoubo-kun/
+// GET /api/anime/detail atau /api/anime/detail/megami-ryou-no-ryoubo-kun 
 async function detailSamehadaku(link) {
   try {
     // Validasi link
@@ -1079,56 +1112,33 @@ if (genres.length === 0) {
   }
 }
 
-app.get('/api/anime/detail', async (req, res) => {
+// Endpoint dengan wildcard untuk menangkap seluruh path setelah /detail/
+app.get('/api/anime/detail/*', async (req, res) => {
   try {
-    const urlParam = req.query.url || req.query.link; // Terima keduanya
+    const fullPath = req.params[0]; // Menangkap "darwin-jihen" atau "anime/darwin-jihen"
     
-    if (!urlParam) {
-      return res.status(400).json({ 
-        success: false, 
-        error: 'URL or link parameter required' 
-      });
+    if (!fullPath) {
+      return res.status(400).json({ success: false, error: 'Slug parameter required' });
     }
     
+    // --- PERBAIKAN DI SINI ---
+    // Hapus 'anime/' dari awal jika sudah ada, lalu tambahkan lagi
+    let cleanSlug = fullPath.replace(/^anime\//, ''); // Hapus 'anime/' jika diawali
+    // Format URL yang benar: https://v1.samehadaku.how/anime/{cleanSlug}/
+    const urlParam = `/anime/${cleanSlug}/`; 
+    // -------------------------
+    
+    console.log('Formatted URL param:', urlParam); // Akan jadi /anime/darwin-jihen/
+    
     const data = await detailSamehadaku(urlParam);
-    
-    // Set response headers
-    res.setHeader('Content-Type', 'application/json');
-    res.setHeader('Cache-Control', 's-maxage=600, stale-while-revalidate'); // Cache 10 menit
-    
     res.json(data);
     
   } catch (error) {
-    res.status(500).json({
-      success: false,
-      error: 'Internal Server Error',
-      message: error.message
-    });
+    res.status(500).json({ success: false, error: error.message });
   }
 });
 
-app.get('/api/anime/detail/:slug', async (req, res) => {
-  try {
-    const slug = req.params.slug;
-    const urlParam = `/anime/${slug}/`; // Format URL Samehadaku
-    
-    const data = await detailSamehadaku(urlParam);
-    
-    res.setHeader('Content-Type', 'application/json');
-    res.setHeader('Cache-Control', 's-maxage=600, stale-while-revalidate');
-    
-    res.json(data);
-    
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      error: 'Internal Server Error',
-      message: error.message
-    });
-  }
-});
-
-// GET /api/anime/watch atau /api/anime/watch/ao-no-miburo-season-2-episode-2 atau /api/anime/watch?url=https://v1.samehadaku.how/ao-no-miburo-season-2-episode-2/
+// GET /api/anime/watch atau /api/anime/watch/ao-no-miburo-season-2-episode-2 
 async function watchSamehadaku(link) {
   try {
     // Validasi link
@@ -1494,39 +1504,18 @@ async function watchSamehadaku(link) {
   }
 }
 
-app.get('/api/anime/watch', async (req, res) => {
+app.get('/api/anime/watch/*', async (req, res) => {
   try {
-    const urlParam = req.query.url || req.query.link;
+    const fullPath = req.params[0]; 
     
-    if (!urlParam) {
+    if (!fullPath) {
       return res.status(400).json({ 
         success: false, 
-        error: 'URL or link parameter required' 
+        error: 'Episode path required' 
       });
     }
     
-    const data = await watchSamehadaku(urlParam);
-    
-    // Set response headers
-    res.setHeader('Content-Type', 'application/json');
-    res.setHeader('Cache-Control', 's-maxage=300, stale-while-revalidate'); // Cache 5 menit
-    
-    res.json(data);
-    
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      error: 'Internal Server Error',
-      message: error.message
-    });
-  }
-});
-
-app.get('/api/anime/watch/:slug', async (req, res) => {
-  try {
-    const slug = req.params.slug;
-    // Format: ao-no-miburo-season-2-episode-2
-    const urlParam = `/${slug}/`;
+    const urlParam = `/${fullPath}/`; 
     
     const data = await watchSamehadaku(urlParam);
     
@@ -2484,7 +2473,7 @@ app.get('/api/anime/studio/:studio/page/:page', async (req, res) => {
 
 // ================= ENDPOINT API DONGHUA =================
 
-// GET //api/donghua/latest-release atau /api/donghua/latest-release?page=3
+// GET //api/donghua/latest atau /api/donghua/latest?page=3
 async function getAnichinLatestRelease(page = 1) {
   try {
     // Validasi page
@@ -2712,7 +2701,7 @@ async function getAnichinLatestRelease(page = 1) {
   }
 }
 
-app.get('/api/donghua/latest-release', async (req, res) => {
+app.get('/api/donghua/latest', async (req, res) => {
   try {
     const page = req.query.page || 1;
     const result = await getAnichinLatestRelease(page);
@@ -2732,7 +2721,7 @@ app.get('/api/donghua/latest-release', async (req, res) => {
   }
 });
 
-app.get('/api/donghua/latest-release/page/:page', async (req, res) => {
+app.get('/api/donghua/latest/page/:page', async (req, res) => {
   try {
     const page = req.params.page || 1;
     const result = await getAnichinLatestRelease(page);
