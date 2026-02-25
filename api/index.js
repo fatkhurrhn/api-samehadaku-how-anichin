@@ -4714,7 +4714,7 @@ app.get('/api/donghua/genres/:genre/page/:page', async (req, res) => {
 
 
 
-// ============= ENDPOINT DONGHUA LIST DENGAN FILTER LENGKAP =============
+// ============= ENDPOINT DONGHUA LIST DENGAN FILTER LENGKAP (DENGAN PROXY) =============
 app.get('/api/donghua/list', async (req, res) => {
     try {
         // ========== AMBIL SEMUA PARAMETER FILTER ==========
@@ -4803,14 +4803,16 @@ app.get('/api/donghua/list', async (req, res) => {
         
         console.log(`Fetching donghua list with filters: ${url}`);
         
-        // ========== FETCH DARI WEBSITE ==========
-        const { data } = await axios.get(url, {
+        // ========== FETCH DARI WEBSITE MENGGUNAKAN PROXY ==========
+        // Gunakan proxy untuk menghindari CORS dan IP block
+        const { data } = await axios.get(`${PROXY}${url}`, {
             headers: {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
                 'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
                 'Accept-Language': 'id-ID,id;q=0.9,en-US;q=0.8,en;q=0.7',
                 'Referer': 'https://www.google.com/'
-            }
+            },
+            timeout: 15000 // Tambahkan timeout 15 detik
         });
         
         const $ = cheerio.load(data);
@@ -4916,12 +4918,12 @@ app.get('/api/donghua/list', async (req, res) => {
                 total_results_estimate: donghuaList.length < limit && !hasNextPage ? donghuaList.length : 'many'
             },
             filter_url: {
-                current: url,
-                base: `${ANICHIN_URL}/anime/`
+                current: `${PROXY}${url}`,
+                base: `${PROXY}${ANICHIN_URL}/anime/`
             },
             source: {
-                name: 'Anichin',
-                url: url,
+                name: 'Anichin (via proxy)',
+                url: `${PROXY}${url}`,
                 scraped_at: new Date().toISOString()
             }
         });
@@ -4943,6 +4945,15 @@ app.get('/api/donghua/list', async (req, res) => {
                     error: 'Access Forbidden (403)'
                 });
             }
+        }
+        
+        // Tambahan handling untuk error timeout
+        if (error.code === 'ECONNABORTED') {
+            return res.status(504).json({
+                success: false,
+                message: 'Timeout saat mengakses website',
+                error: 'Request Timeout'
+            });
         }
         
         res.status(500).json({
