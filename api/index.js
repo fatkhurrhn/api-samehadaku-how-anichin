@@ -4964,6 +4964,259 @@ app.get('/api/donghua/list', async (req, res) => {
     }
 });
 
+// ============= ENDPOINT ANIME LIST DENGAN FILTER LENGKAP (DENGAN PROXY) =============
+app.get('/api/anime/list', async (req, res) => {
+    try {
+        // ========== AMBIL SEMUA PARAMETER FILTER ==========
+        const page = parseInt(req.query.page) || 1;
+        const limit = parseInt(req.query.limit) || 20;
+        
+        // Filter berdasarkan title
+        const titleParam = req.query.title || '';
+        
+        // Genre (bisa array)
+        const genreParams = req.query.genre ? 
+            (Array.isArray(req.query.genre) ? req.query.genre : [req.query.genre]) : [];
+        
+        // Status (single value - "Currently Airing", "Finished Airing")
+        const statusParam = req.query.status || '';
+        
+        // Type (single value - "TV", "OVA", "ONA", "Special", "Movie")
+        const typeParam = req.query.type || '';
+        
+        // Order (single value - "title", "titlereverse", "update", "latest", "popular")
+        const orderParam = req.query.order || '';
+        
+        // ========== BANGUN URL DENGAN FILTER ==========
+        const SAMEHADAKU_URL = 'https://v1.samehadaku.how/daftar-anime-2/';
+        
+        let url = SAMEHADAKU_URL;
+        
+        // Kumpulkan semua parameter query
+        const queryParams = [];
+        
+        // Tambahkan title
+        if (titleParam) {
+            queryParams.push(`title=${encodeURIComponent(titleParam)}`);
+        }
+        
+        // Tambahkan genre (format: genre[]=action&genre[]=fantasy)
+        genreParams.forEach(genre => {
+            queryParams.push(`genre[]=${encodeURIComponent(genre)}`);
+        });
+        
+        // Tambahkan status
+        if (statusParam) {
+            queryParams.push(`status=${encodeURIComponent(statusParam)}`);
+        }
+        
+        // Tambahkan type
+        if (typeParam) {
+            queryParams.push(`type=${encodeURIComponent(typeParam)}`);
+        }
+        
+        // Tambahkan order
+        if (orderParam) {
+            queryParams.push(`order=${encodeURIComponent(orderParam)}`);
+        }
+        
+        // Gabungkan semua parameter ke URL
+        if (queryParams.length > 0) {
+            url += '?' + queryParams.join('&');
+        }
+        
+        // Tambahkan page jika > 1 (untuk halaman berikutnya)
+        if (page > 1) {
+            // Jika sudah ada query params, tambahkan &page=
+            if (queryParams.length > 0) {
+                url += `&page=${page}`;
+            } else {
+                url += `?page=${page}`;
+            }
+        }
+        
+        console.log(`Fetching anime list with filters: ${url}`);
+        
+        // ========== FETCH DARI WEBSITE MENGGUNAKAN PROXY ==========
+        // Gunakan proxy yang sama seperti di endpoint donghua
+        const { data } = await axios.get(`${PROXY}${url}`, {
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+                'Accept-Language': 'id-ID,id;q=0.9,en-US;q=0.8,en;q=0.7',
+                'Referer': 'https://www.google.com/'
+            },
+            timeout: 15000
+        });
+        
+        const $ = cheerio.load(data);
+        
+        // ========== PARSING HASIL ==========
+        const animeList = [];
+        
+        $('.animpost').each((index, element) => {
+            const $el = $(element);
+            
+            // Ambil link utama
+            const link = $el.find('.animposx a').first();
+            const href = link.attr('href') || '';
+            
+            // Skip if no href
+            if (!href) return;
+            
+            // Title
+            const title = $el.find('.title h2').text().trim() || 
+                         link.attr('title') || 
+                         'Unknown Title';
+            
+            // Thumbnail
+            let thumbnail = $el.find('.content-thumb img').attr('src');
+            if (!thumbnail) {
+                thumbnail = $el.find('.content-thumb img').attr('data-src');
+            }
+            
+            // Fix thumbnail URL if needed
+            if (thumbnail) {
+                if (thumbnail.startsWith('//')) {
+                    thumbnail = 'https:' + thumbnail;
+                } else if (!thumbnail.startsWith('http')) {
+                    thumbnail = 'https://v1.samehadaku.how' + thumbnail;
+                }
+            }
+            
+            // Type (dari badge)
+            const type = $el.find('.content-thumb .type').text().trim() || 'Unknown';
+            
+            // Score
+            const score = $el.find('.content-thumb .score').text().trim() || '0';
+            
+            // Status (dari data class)
+            const status = $el.find('.data .type').text().trim() || 'Unknown';
+            
+            // Get slug from URL
+            let slug = href.replace('https://v1.samehadaku.how/anime/', '').replace(/\/$/, '');
+            
+            // Ambil data dari tooltip
+            const tooltipTitle = $el.find('.stooltip .title h4').text().trim();
+            const views = $el.find('.stooltip .metadata span:last-child').text().trim() || '';
+            const synopsis = $el.find('.stooltip .ttls').text().trim() || '';
+            
+            // Ambil genre dari tooltip
+            const genres = [];
+            $el.find('.stooltip .genres .mta a').each((i, genreEl) => {
+                genres.push($(genreEl).text().trim());
+            });
+            
+            animeList.push({
+                title: title,
+                original_title: tooltipTitle || title,
+                slug: slug,
+                url: href,
+                thumbnail: thumbnail || null,
+                type: type,
+                status: status,
+                score: parseFloat(score) || 0,
+                views: views,
+                synopsis: synopsis,
+                genres: genres,
+                source: 'Samehadaku'
+            });
+        });
+        
+        // ========== PAGINATION INFO ==========
+        let hasNextPage = false;
+        let lastPage = page;
+        
+        $('.pagination a').each((i, el) => {
+            const text = $(el).text().trim();
+            if (text === 'Next' || $(el).hasClass('next') || $(el).find('.fa-caret-right').length > 0) {
+                hasNextPage = true;
+            }
+            
+            const pageNum = parseInt(text);
+            if (!isNaN(pageNum) && pageNum > lastPage) {
+                lastPage = pageNum;
+            }
+        });
+        
+        // Cek juga dari class inactive
+        if ($('.pagination a.inactive').length > 0) {
+            hasNextPage = true;
+        }
+        
+        // ========== INFO FILTER YANG SEDANG DITERAPKAN ==========
+        const appliedFilters = {
+            title: titleParam || null,
+            genres: genreParams,
+            status: statusParam || null,
+            type: typeParam || null,
+            order: orderParam || null
+        };
+        
+        // ========== RESPONSE ==========
+        res.json({
+            success: true,
+            data: {
+                anime: animeList.slice(0, limit),
+                total_results: animeList.length,
+                total_in_page: animeList.length,
+                applied_filters: appliedFilters
+            },
+            pagination: {
+                current_page: page,
+                next_page: hasNextPage ? page + 1 : null,
+                has_next_page: hasNextPage,
+                last_page: lastPage > page ? lastPage : (hasNextPage ? null : page),
+                limit: limit,
+                total_results_estimate: animeList.length < limit && !hasNextPage ? animeList.length : 'many'
+            },
+            filter_url: {
+                current: `${PROXY}${url}`,
+                base: `${PROXY}${SAMEHADAKU_URL}`
+            },
+            source: {
+                name: 'Samehadaku (via proxy)',
+                url: `${PROXY}${url}`,
+                scraped_at: new Date().toISOString()
+            }
+        });
+        
+    } catch (error) {
+        console.error('Error fetching anime list:', error.message);
+        
+        if (error.response) {
+            if (error.response.status === 404) {
+                return res.status(404).json({
+                    success: false,
+                    message: 'Halaman tidak ditemukan',
+                    error: 'Not Found'
+                });
+            } else if (error.response.status === 403) {
+                return res.status(503).json({
+                    success: false,
+                    message: 'Website Samehadaku memblokir akses. Coba lagi nanti.',
+                    error: 'Access Forbidden (403)'
+                });
+            }
+        }
+        
+        // Handling untuk error timeout
+        if (error.code === 'ECONNABORTED') {
+            return res.status(504).json({
+                success: false,
+                message: 'Timeout saat mengakses website',
+                error: 'Request Timeout'
+            });
+        }
+        
+        res.status(500).json({
+            success: false,
+            message: 'Gagal mengambil daftar anime',
+            error: error.message
+        });
+    }
+});
+
 
 
 const PORT = process.env.PORT || 3000;
